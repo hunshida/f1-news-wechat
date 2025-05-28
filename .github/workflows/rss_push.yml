@@ -1,0 +1,68 @@
+name: RSS Push
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # 每5分钟运行一次
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install feedparser requests
+
+      - name: Run script
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          RSS_URL: ${{ secrets.RSS_URL }}
+        run: |
+          python <<EOF
+          import os
+          import feedparser
+          import requests
+
+          PUSHPLUS_TOKEN = os.environ['PUSHPLUS_TOKEN']
+          RSS_URL = os.environ['RSS_URL']
+          LAST_ENTRY_FILE = 'last_entry.txt'
+
+          feed = feedparser.parse(RSS_URL)
+          if not feed.entries:
+              print("No entries found.")
+              exit()
+
+          latest_entry = feed.entries[0]
+          latest_link = latest_entry.link
+          latest_title = latest_entry.title
+
+          try:
+              with open(LAST_ENTRY_FILE, 'r') as f:
+                  last_link = f.read().strip()
+          except FileNotFoundError:
+              last_link = ''
+
+          if latest_link != last_link:
+              message = f"【方程式新闻】\n\n{latest_title}\n{latest_link}"
+              response = requests.post(
+                  "http://www.pushplus.plus/send",
+                  json={
+                      "token": PUSHPLUS_TOKEN,
+                      "title": "赛车新闻更新",
+                      "content": message
+                  }
+              )
+              print("PushPlus response:", response.text)
+              with open(LAST_ENTRY_FILE, 'w') as f:
+                  f.write(latest_link)
+          else:
+              print("No new entries.")
+          EOF
